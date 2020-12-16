@@ -1,0 +1,39 @@
+---
+- hosts: all
+  tasks:
+    - name: Remove swapfile from /etc/fstab
+      mount:
+        name: "{{ item }}"
+        fstype: swap
+        state: absent
+      with_items:
+        - swap
+        - none
+      become: yes
+
+    - name: Disable swap
+      command: swapoff -a
+      when: ansible_swaptotal_mb > 0
+      become: yes
+
+    - name: Add an apt signing key for Kubernetes
+      apt_key:
+        url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+        state: present
+      become: yes
+
+    - name: Adding apt repository for Kubernetes
+      apt_repository:
+        repo: deb https://apt.kubernetes.io/ kubernetes-xenial main
+        state: present
+        filename: kubernetes.list
+      become: yes
+
+    - name: Atualiza a lista de repositorios e instala os pacotes do K8s
+      apt: name={{ item }} update_cache=yes
+      loop: ['kubelet', 'kubeadm', 'kubectl']
+      become: yes
+
+    - name: Acessa o cluster utilizando o token gerado pelo master
+      command: sh /vagrant/video-service-slice/kubernetes-setup/join-command.sh
+      become: yes

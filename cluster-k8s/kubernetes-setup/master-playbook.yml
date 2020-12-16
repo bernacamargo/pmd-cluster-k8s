@@ -1,0 +1,67 @@
+---
+- hosts: all
+  tasks:
+    - name: Remove swapfile do /etc/fstab
+      mount:
+        name: "{{ item }}"
+        fstype: swap
+        state: absent
+      with_items:
+        - swap
+        - none
+      become: yes
+
+    - name: Desabilita swap
+      command: swapoff -a
+      when: ansible_swaptotal_mb > 0
+      become: yes
+
+    - name: Adiciona uma apt signing key para Kubernetes
+      apt_key:
+        url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+        state: present
+      become: yes
+
+    - name: Adiciona apt repository para Kubernetes
+      apt_repository:
+        repo: deb https://apt.kubernetes.io/ kubernetes-xenial main
+        state: present
+        filename: kubernetes.list
+      become: yes
+
+    - name: Atualiza a lista de repositorios e instala os pacotes do K8s
+      apt: name={{ item }} update_cache=yes
+      loop: ['kubelet', 'kubeadm', 'kubectl']
+      become: yes
+
+    - name: Inicia o cluster Kubernetes
+      command: kubeadm init --apiserver-advertise-address 192.168.10.10 --pod-network-cidr=10.244.0.0/16
+      become: yes
+
+    - name: Cria a estrutura de diretorios para o funcionamento do Kubernetes
+      file:
+        path: /home/vagrant/.kube
+        state: directory
+
+    - name: Copia as configuracoes do kubernets para o diretorio do usuario vagrant
+      command: cp -i /etc/kubernetes/admin.conf /home/vagrant/.kube/config
+      become: yes
+
+    - name: Ajusta as permissoes no arquivo de configuracoes do Kubernetes
+      file:
+        path: /home/vagrant/.kube/config
+        owner: vagrant
+        group: vagrant
+        state: file
+      become: yes
+    
+    - name: Instala o plugin Flannel para gerenciar a rede de overlay no Kubernetes
+      command: kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+      
+    - name: Salva o token para entrada de novos n ́os no cluster
+      command: kubeadm token create --print-join-command
+      register: join_command
+
+    - name: Copia o token para entrada de novos n ́os no cluster em um arquivo
+      become: false
+      local_action: copy content="{{ join_command.stdout_lines[0] }}" dest="./join-command.sh"
